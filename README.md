@@ -166,3 +166,7 @@ For each P-frame, a 16x16 block counts as changed if its motion vector moves at 
 it has no vector at all (intra-coded: new content). Motion counts when one connected cluster of
 changed blocks reaches 8 blocks, because noisy sensors make the encoder intra-code scattered single
 blocks. Keyframes carry no vectors, so they always run the full detector and resync the cache.
+
+## Incident reports
+
+Use **Report incident** (or **R**) in the viewer to download a local snapshot with available frame/overlay pixels, detection history, timing and optional notes. No model calls or uploads are added. See [report format and limitations](docs/incident-reports.md).

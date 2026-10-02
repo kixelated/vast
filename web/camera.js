@@ -1,3 +1,4 @@
+import { chooseResult, captureReport } from "./incident.mjs";
 // One camera: the MoQ player, an overlay synced to the frame on screen, and its AI tracks.
 import "https://esm.sh/@moq/watch@0.6.1/element";
 import * as Moq from "https://esm.sh/@moq/net@0.4.1";
@@ -65,7 +66,24 @@ export function mountCamera(root, { url, name, ai = `${name}-ai`, show = { motio
 
   // Subscribing to `detections` is what tells the worker someone wants AI on this camera (MoQ
   // demand); closing the subscription is what stops the models. cam.setAI(false) does that.
-  let wanted = true, dead = false, sub, wake;
+  let wanted = true, dead = false, sub, wake, pendingCapture;
+  cam.capture = (context) => new Promise((resolve, reject) => {
+    if (dead || pendingCapture) { reject(new Error("Camera unavailable or capture pending")); return; }
+    const readContext = typeof context === "function" ? context : () => context;
+    const camera = readContext().camera;
+    const timer = setTimeout(() => { if (pendingCapture?.reject === reject) pendingCapture = null; reject(new Error("No rendered frame available")); }, 2000);
+    pendingCapture = {readContext, camera, resolve, reject, timer};
+  });
+  function finishCapture(choice) {
+    if (!pendingCapture) return;
+    const p = pendingCapture; pendingCapture = null; clearTimeout(p.timer);
+    try {
+      const context = p.readContext();
+      if (context.camera !== p.camera) throw new Error("Camera switched before capture");
+      captureReport({choice, results, show: cam.show, wanted, ...context}, watch.querySelector("canvas"), choice.result ? overlay : null).then(p.resolve,p.reject);
+    }
+    catch(e) { p.reject(e); }
+  }
   cam.setAI = (on) => {
     wanted = on;
     if (on) wake?.();
@@ -74,6 +92,7 @@ export function mountCamera(root, { url, name, ai = `${name}-ai`, show = { motio
   // Tear down for a camera switch: unsubscribe detections (stops the models) and the video.
   cam.destroy = () => {
     dead = true;
+    if (pendingCapture) { clearTimeout(pendingCapture.timer); pendingCapture.reject(new Error("Camera switched before capture")); pendingCapture = null; }
     cam.setAI(false);
     wake?.();
     watch.remove();
@@ -107,19 +126,14 @@ export function mountCamera(root, { url, name, ai = `${name}-ai`, show = { motio
 
   // The newest result at or before the frame on screen; falls back to the newest overall.
   function current() {
-    const ms = watch.renderer?.out?.timestamp?.peek?.();
-    if (ms === undefined || !results.length) return results[results.length - 1];
-    const us = ms * 1000;
-    let best;
-    for (const r of results) if (r.t <= us + 1000 && (!best || r.t > best.t)) best = r;
-    return best ?? results[results.length - 1];
+    return chooseResult(results, watch.renderer?.out?.timestamp?.peek?.());
   }
 
   function draw() {
     if (dead) return;
     requestAnimationFrame(draw);
-    const r = current();
-    if (!r) { ctx.clearRect(0, 0, overlay.width, overlay.height); return; }
+    const choice = current(), r = choice.result;
+    if (!r) { ctx.clearRect(0, 0, overlay.width, overlay.height); finishCapture(choice); return; }
     if (overlay.width !== r.w || overlay.height !== r.h) { overlay.width = r.w; overlay.height = r.h; }
     ctx.clearRect(0, 0, r.w, r.h);
     const scale = r.w / 1280; // keep strokes and labels readable at any resolution
@@ -156,6 +170,7 @@ export function mountCamera(root, { url, name, ai = `${name}-ai`, show = { motio
         ctx.fillText(text, x0 + 4 * scale, Math.max(th - 6 * scale, y0 - 6 * scale));
       }
     }
+    finishCapture(choice);
   }
   draw();
   return cam;

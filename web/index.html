@@ -58,6 +58,14 @@
   .toggles { color: var(--muted); user-select: none; display: flex; flex-wrap: wrap; gap: 4px 14px; align-items: center; }
   .legend i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin: 0 4px 0 10px; vertical-align: middle; }
   @media (max-width: 800px) { .stats { grid-template-columns: repeat(2, 1fr); } }
+  .incident-panel { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 16px; margin-top: 10px; }
+  .incident-panel[hidden] { display: none; }
+  .incident-panel label { display: block; margin: 10px 0; }
+  .incident-panel textarea { display: block; width: min(96%, 700px); }
+  .incident-preview { display: flex; flex-wrap: wrap; gap: 12px; }
+  .incident-preview figure { margin: 0; width: min(420px, 100%); }
+  .incident-preview img { width: 100%; background: #222; }
+  button, select, textarea { font: inherit; }
 </style>
 </head>
 <body>
@@ -66,6 +74,7 @@
 <script type="module">
   import { mountCamera, follow, renderEvents, closeAll } from "./camera.js";
   import config from "./config.js";
+  import { mountReporter } from "./incident.mjs";
 
   const params = new URLSearchParams(location.search);
   // config.js points at the relay: localhost for ./demo.sh, the CDN for the hosted copy (deploy.sh).
@@ -141,6 +150,9 @@
   const feed = $(`<div class="events"></div>`);
   app.append(toggles, $(`<h2>Events <small>all cameras, described by NVIDIA Cosmos only when an object moved</small></h2>`), feed);
   renderEvents(feed, []);
+  const reportHost = document.createElement("div");
+  toggles.after(reportHost);
+  mountReporter(reportHost, () => cam, () => ({camera: selected, events: state[selected].events}));
 
   const seen = new Map(); // "cam/id" -> when this page first saw the event
   const alerted = new Set();
